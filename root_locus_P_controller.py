@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 from matplotlib.widgets import Slider
-from control import tf, feedback, step_response
+from control import tf, feedback, step_response, step_info
 
 # Define the open-loop transfer function G(s)
 numerator = [1]
@@ -13,7 +14,22 @@ G = tf(numerator, denominator)
 initial_Kp = 1.0
 
 # Time vector for step response
-time = np.linspace(0, 10, 500)
+time = np.linspace(0, 20, 500)
+
+# Define a function to calculate performance metrics
+def calculate_metrics(TF):
+    
+    metrics = step_info(TF)
+    # Overshoot percentage
+    overshoot = metrics['Overshoot']
+
+    # Settling time (2% criterion)
+    settling_time = metrics['SettlingTime']
+
+    # Steady-state error
+    steady_state_error = 1.0 - metrics['SteadyStateValue']
+
+    return overshoot, settling_time, steady_state_error
 
 # Define a function to update plots dynamically
 def update(val):
@@ -27,6 +43,14 @@ def update(val):
     step_line.set_ydata(y)
     step_ax.relim()
     step_ax.autoscale_view()
+    
+    # Calculate and display performance metrics
+    overshoot, settling_time, steady_state_error = calculate_metrics(TF=T)
+    metrics_text.set_text(
+        f"Overshoot: {overshoot:.2f}%\n"
+        f"Settling Time: {settling_time:.2f}s\n"
+        f"Steady-State Error: {steady_state_error:.2e}"
+    )
 
     # Update poles
     poles = np.roots(np.polyadd(denominator, [Kp]))
@@ -52,6 +76,20 @@ step_ax.set_title("Step Response")
 step_ax.set_xlabel("Time (s)")
 step_ax.set_ylabel("Response")
 step_ax.grid()
+
+# Add performance metrics as text box
+overshoot, settling_time, steady_state_error = calculate_metrics(TF = T)
+metrics_text = step_ax.text(
+    0.55, 0.05,  # Position in axes coordinates
+    f"Overshoot: {overshoot:.2f}%\n"
+    f"Settling Time: {settling_time:.2f}s\n"
+    f"Steady-State Error: {steady_state_error:.2e}",
+    transform=step_ax.transAxes,
+    fontsize=10,
+    verticalalignment='bottom',
+    horizontalalignment="left",
+    bbox=dict(boxstyle="round", facecolor="white", edgecolor="black")
+)
 
 # Pole plot
 poles = np.roots(np.polyadd(denominator, [initial_Kp]))
@@ -90,14 +128,18 @@ imag_part = wn * np.sqrt(1 - zeta ** 2)
 # calculate desired poles
 desired_poles = [complex(real_part, imag_part), complex(real_part, -imag_part)]
 
-# Add the legend with LaTeX-style scientific notation for wn and zeta
-wn_label = r"$\omega_n = {:.2f}$".format(wn)  # LaTeX for ωn
-zeta_label = r"$\zeta = {:.2f}$".format(zeta)  # LaTeX for ζ
-
 # Plot desired poles as green circles
 for pole in desired_poles:
-    circle = Circle((np.real(pole), np.imag(pole)), radius=0.05, fill=False, color='green', lw=2)
+    circle = Circle((np.real(pole), np.imag(pole)), radius=0.2, fill=False, color='green', lw=3)
     root_ax.add_patch(circle)
+    
+# Define custom legend handles
+legend_handles = [
+    Line2D([0], [0], color='red', marker='x', linestyle='None', label='Actual Poles'),
+    #Line2D([0], [0], color='black', marker='o', linestyle='None', label='Zeros', markerfacecolor='none'),
+    Line2D([0], [0], color='b', linestyle='--', label='Asymptotes'),
+    Line2D([0], [0], color='green', marker='o', linestyle='None', label='Desired Poles', markerfacecolor='none')
+]
 
 # Set plot limits and update layout
 root_ax.set_xlim(-10, 1)
@@ -105,7 +147,7 @@ root_ax.set_ylim(-10, 10)
 root_ax.set_title("Poles in the Real-Imaginary Plane")
 root_ax.set_xlabel("Real")
 root_ax.set_ylabel("Imaginary")
-root_ax.legend([f"{wn_label}, {zeta_label}"], loc = 'upper left', fontsize=10, frameon=True, fancybox=True, shadow=True)
+root_ax.legend(handles = legend_handles, loc = 'upper left', fontsize=10, frameon=True, fancybox=True, shadow=True)
 root_ax.grid()
 
 # Add slider
