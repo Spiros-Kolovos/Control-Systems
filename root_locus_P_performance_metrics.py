@@ -6,24 +6,22 @@ from matplotlib.widgets import Slider
 from control import tf, feedback, step_response, step_info
 
 # Define the open-loop transfer function G(s)
-numerator = [8]
+numerator = np.polymul([8],[2, 1])
 denominator = np.polymul([1, 5], np.polymul([1, 2], [1, 3]))
 G = tf(numerator, denominator)
 
-# set specifications
+# Set specifications
 wn = 4
 zeta = 0.5
 
-# Initial PD controller gains
+# Initial PI controller gains
 initial_Kp = 1.0  # Proportional gain
-initial_Kd = 0.5  # Derivative gain
 
 # Time vector for step response
 time = np.linspace(0, 20, 500)
 
 # Define a function to calculate performance metrics
 def calculate_metrics(TF):
-    
     metrics = step_info(TF)
     # Overshoot percentage
     overshoot = metrics['Overshoot']
@@ -66,13 +64,12 @@ def calculate_root_locus(poles_array, zeros_array, specification_wn = wn, specif
     imag_part = specification_wn * np.sqrt(1 - specification_zeta ** 2)
     
     return asymptote_info, real_part, imag_part
-    
+
 # Define a function to update plots dynamically
 def update(val):
-    global legend, asymptote_lines
+    global legend
     Kp = kp_slider.val  # Get current Kp slider value
-    Kd = kd_slider.val  # Get current Kd slider value
-    C = tf([Kd, Kp], [1])  # PD controller: Kd * s + Kp
+    C = tf([Kp], [1])  # Initial controller
     T = feedback(C * G, 1)  # Closed-loop transfer function
 
     # Update step response
@@ -90,26 +87,18 @@ def update(val):
     )
 
     # Update poles and zeros
-    poles = np.roots(np.polyadd(np.polymul([Kd, Kp], numerator), denominator))
-    zeros = np.roots(np.polymul([Kd, Kp], numerator))
+    poles = np.roots(T.den[0][0])
+    zeros = np.roots(T.num[0][0])
     pole_scatter.set_offsets(np.column_stack((poles.real, poles.imag)))
+    zero_scatter.set_offsets(np.column_stack((zeros.real, zeros.imag)))
 
-    # Update zero position for PD controller
-    if Kd != 0:  # Avoid division by zero
-        pd_zero = -Kp / Kd
-        pd_zero_circle.center = (pd_zero, 0)
-        pd_zero_circle.set_visible(True)
-    else:
-        pd_zero_circle.set_visible(False)
-        
     # Recalculate and update asymptotes
     for line in asymptote_lines:
         line.remove()  # Clear old asymptotes
     asymptote_lines.clear()
-
-    #calculate root locus
+    
     asymptote_info, real_part, imag_part = calculate_root_locus(poles, zeros)
-            
+
     roots_text.set_text(
     f"Poles:\n{', '.join([f'{pole.real:.2f}+{pole.imag:.2f}j' for pole in poles[:2]])}"
     + (f",\n{', '.join([f'{pole.real:.2f}+{pole.imag:.2f}j' for pole in poles[2:]])}" if len(poles) > 2 else "") + "\n\n"
@@ -118,9 +107,9 @@ def update(val):
     f"Desired Poles: {real_part:.2f}±{imag_part:.2f}j"
     )
 
-    # Update legend to reflect the current Kp and Kd values
+    # Update legend
     legend.remove()  # Remove old legend
-    legend = step_ax.legend([step_line], [f"Kp={Kp:.1f}, Kd={Kd:.1f}"])  # Add updated legend
+    legend = step_ax.legend([step_line], [f"Kp={Kp:.1f}"])  # Add updated legend
 
     # Refresh plots
     fig.canvas.draw_idle()
@@ -129,11 +118,11 @@ def update(val):
 fig, (step_ax, root_ax) = plt.subplots(1, 2, figsize=(12, 6), gridspec_kw={'width_ratios': [1, 1]})
 
 # Step response plot
-C = tf([initial_Kd, initial_Kp], [1])  # Initial controller
+C = tf([initial_Kp], [1])  # Initial controller
 T = feedback(C * G, 1)
 t, y = step_response(T, time)
-step_line, = step_ax.plot(t, y, label=f'Kp={initial_Kp:.1f}, Kd={initial_Kd:.1f}')
-legend = step_ax.legend() # Store initial legend
+step_line, = step_ax.plot(t, y, label=f'Kp={initial_Kp:.1f}')
+legend = step_ax.legend()  # Store initial legend
 step_ax.set_title("Step Response")
 step_ax.set_xlabel("Time (s)")
 step_ax.set_ylabel("Response")
@@ -154,22 +143,18 @@ metrics_text = step_ax.text(
 )
 
 # Pole-zero plot
-poles = np.roots(np.polyadd(np.polymul([initial_Kd, initial_Kp], numerator), denominator))
-zeros = np.roots(np.polymul([initial_Kd, initial_Kp], numerator))
+poles = np.roots(T.den[0][0])
+zeros = np.roots(T.num[0][0])
 pole_scatter = root_ax.scatter(poles.real, poles.imag, color='red', marker='x', label='Actual Poles')
-pd_zero_circle = Circle((-initial_Kp / initial_Kd, 0), radius=0.2, fill=False, color='black', lw=3)
-root_ax.add_patch(pd_zero_circle)
+zero_scatter = root_ax.scatter(zeros.real, zeros.imag, color='black', marker='o', label='Actual Zeros', edgecolor='black')
 
 # Initialize asymptotes
-asymptote_lines = []
-
+asymptote_lines = [] 
 # calculate root locus for the first time
 asymptote_info, real_part, imag_part = calculate_root_locus(poles, zeros)
 
-# calculate desired poles
-desired_poles = [complex(real_part, imag_part), complex(real_part, -imag_part)]
-
 # Plot desired poles as green circles
+desired_poles = [complex(real_part, imag_part), complex(real_part, -imag_part)]
 for pole in desired_poles:
     circle = Circle((np.real(pole), np.imag(pole)), radius=0.2, fill=False, color='green', lw=3)
     root_ax.add_patch(circle)
@@ -181,8 +166,7 @@ legend_handles = [
     Line2D([0], [0], color='b', linestyle='--', label='Asymptotes'),
     Line2D([0], [0], color='green', marker='o', linestyle='None', label='Desired Poles', markerfacecolor='none')
 ]
-
-
+    
 roots_text = root_ax.text(
     0.02, 0.02,  # Position in axes coordinates
     f"Poles:\n{', '.join([f'{pole.real:.2f}+{pole.imag:.2f}j' for pole in poles])}\n\n"
@@ -198,22 +182,18 @@ roots_text = root_ax.text(
 
 # Set plot limits
 root_ax.set_xlim(-10, 1)
-root_ax.set_ylim(-10, 10)
+root_ax.set_ylim(-20, 20)
 root_ax.set_title("Poles and Zeros in the Real-Imaginary Plane")
 root_ax.set_xlabel("Real")
 root_ax.set_ylabel("Imaginary")
-root_ax.legend(handles = legend_handles, loc = 'upper left', fontsize=10, frameon=True, fancybox=True, shadow=True)
 root_ax.grid()
 
-# Add sliders for Kp and Kd
+# Add sliders for Kp and Ki
 kp_slider_ax = plt.axes([0.25, 0.01, 0.5, 0.03], facecolor='lightgoldenrodyellow')
-kd_slider_ax = plt.axes([0.25, 0.05, 0.5, 0.03], facecolor='lightgoldenrodyellow')
 kp_slider = Slider(kp_slider_ax, 'Kp', 0.1, 50.0, valinit=initial_Kp, valstep=0.1)
-kd_slider = Slider(kd_slider_ax, 'Kd', 0.1, 50.0, valinit=initial_Kd, valstep=0.1)
 
 # Attach the update function to the sliders
 kp_slider.on_changed(update)
-kd_slider.on_changed(update)
 
 plt.tight_layout()
 plt.show()
